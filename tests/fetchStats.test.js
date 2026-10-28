@@ -132,6 +132,90 @@ describe("Test fetchStats", () => {
     });
   });
 
+  it.each([0, 3])(
+    "excludes issue repositories without changing other stats (%i issues)",
+    async (issueCount) => {
+      const baseline = await fetchStats("anuraghazra");
+      mock.reset();
+      mock.onPost("https://api.github.com/graphql").reply(200, {
+        data: { ...data_stats.data, filteredIssues: { issueCount } },
+      });
+
+      const result = await fetchStats(
+        "anuraghazra",
+        false,
+        [],
+        false,
+        false,
+        false,
+        ["org/menu-bot"],
+      );
+      expect(result).toEqual({
+        ...baseline,
+        totalIssues: issueCount,
+        rank: calculateRank({
+          all_commits: false,
+          commits: 100,
+          prs: 300,
+          reviews: 50,
+          issues: issueCount,
+          repos: 5,
+          stars: 300,
+          followers: 100,
+        }),
+      });
+      const { variables, query } = JSON.parse(mock.history.post[0].data);
+      expect(variables.issueSearchQuery).toBe(
+        "is:issue author:anuraghazra -repo:org/menu-bot",
+      );
+      expect(variables.filterIssues).toBe(true);
+      expect(query).toContain("filteredIssues: search(type: ISSUE");
+      expect(mock.history.post).toHaveLength(1);
+    },
+  );
+
+  it("supports multiple full repository names without duplicate exclusions", async () => {
+    mock.reset();
+    mock.onPost("https://api.github.com/graphql").reply(200, {
+      data: { ...data_stats.data, filteredIssues: { issueCount: 3 } },
+    });
+    await fetchStats("anuraghazra", false, [], false, false, false, [
+      "org/menu-bot",
+      " other/bot ",
+      "org/menu-bot",
+    ]);
+    expect(
+      JSON.parse(mock.history.post[0].data).variables.issueSearchQuery,
+    ).toBe("is:issue author:anuraghazra -repo:org/menu-bot -repo:other/bot");
+  });
+
+  it.each([undefined, null, -1, 201, "3"])(
+    "rejects missing or invalid filtered issue counts (%s)",
+    async (issueCount) => {
+      mock.reset();
+      mock.onPost("https://api.github.com/graphql").reply(200, {
+        data: { ...data_stats.data, filteredIssues: { issueCount } },
+      });
+      await expect(
+        fetchStats("anuraghazra", false, [], false, false, false, [
+          "org/menu-bot",
+        ]),
+      ).rejects.toThrow("Could not fetch filtered issues.");
+    },
+  );
+
+  it.each(["menu-bot", "org/menu-bot is:pr", "org/bot/extra", "org/"])(
+    "rejects an invalid repository filter (%s)",
+    async (repo) => {
+      await expect(
+        fetchStats("anuraghazra", false, [], false, false, false, [repo]),
+      ).rejects.toThrow(
+        "exclude_issue_repos must contain owner/repository names.",
+      );
+      expect(mock.history.post).toHaveLength(0);
+    },
+  );
+
   it("should stop fetching when there are repos with zero stars", async () => {
     mock.reset();
     mock

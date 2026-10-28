@@ -40,7 +40,10 @@ const GRAPHQL_REPOS_QUERY = `
 `;
 
 const GRAPHQL_STATS_QUERY = `
-  query userInfo($login: String!, $after: String, $includeMergedPullRequests: Boolean!, $includeDiscussions: Boolean!, $includeDiscussionsAnswers: Boolean!) {
+  query userInfo($login: String!, $after: String, $includeMergedPullRequests: Boolean!, $includeDiscussions: Boolean!, $includeDiscussionsAnswers: Boolean!, $filterIssues: Boolean!, $issueSearchQuery: String!) {
+    filteredIssues: search(type: ISSUE, query: $issueSearchQuery, first: 1) @include(if: $filterIssues) {
+      issueCount
+    }
     user(login: $login) {
       name
       login
@@ -109,6 +112,7 @@ const fetcher = (variables, token) => {
  * @param {boolean} variables.includeMergedPullRequests Include merged pull requests.
  * @param {boolean} variables.includeDiscussions Include discussions.
  * @param {boolean} variables.includeDiscussionsAnswers Include discussions answers.
+ * @param {string[]} variables.excludeIssueRepos Full repository names to exclude from issues.
  * @returns {Promise<AxiosResponse>} Axios response.
  *
  * @description This function supports multi-page fetching if the 'FETCH_MULTI_PAGE_STARS' environment variable is set to true.
@@ -118,6 +122,7 @@ const statsFetcher = async ({
   includeMergedPullRequests,
   includeDiscussions,
   includeDiscussionsAnswers,
+  excludeIssueRepos,
 }) => {
   let stats;
   let hasNextPage = true;
@@ -130,6 +135,12 @@ const statsFetcher = async ({
       includeMergedPullRequests,
       includeDiscussions,
       includeDiscussionsAnswers,
+      filterIssues: excludeIssueRepos.length > 0,
+      issueSearchQuery: [
+        "is:issue",
+        `author:${username}`,
+        ...excludeIssueRepos.map((repo) => `-repo:${repo}`),
+      ].join(" "),
     };
     let res = await retryer(fetcher, variables);
     if (res.data.errors) {
@@ -217,6 +228,7 @@ const totalCommitsFetcher = async (username) => {
  * @param {boolean} include_merged_pull_requests Include merged pull requests.
  * @param {boolean} include_discussions Include discussions.
  * @param {boolean} include_discussions_answers Include discussions answers.
+ * @param {string[]} exclude_issue_repos Full repository names to exclude from issues only.
  * @returns {Promise<StatsData>} Stats data.
  */
 const fetchStats = async (
@@ -226,9 +238,29 @@ const fetchStats = async (
   include_merged_pull_requests = false,
   include_discussions = false,
   include_discussions_answers = false,
+  exclude_issue_repos = [],
 ) => {
   if (!username) {
     throw new MissingParamError(["username"]);
+  }
+
+  const issueRepos = [
+    ...new Set(exclude_issue_repos.map((repo) => repo.trim())),
+  ];
+  if (
+    issueRepos.length > 0 &&
+    (!githubUsernameRegex.test(username) ||
+      issueRepos.some((repo) => {
+        const [owner, name, extra] = repo.split("/");
+        return (
+          !githubUsernameRegex.test(owner) ||
+          !name ||
+          !/^[a-zA-Z0-9_.-]+$/.test(name) ||
+          extra !== undefined
+        );
+      }))
+  ) {
+    throw new Error("exclude_issue_repos must contain owner/repository names.");
   }
 
   const stats = {
@@ -251,6 +283,7 @@ const fetchStats = async (
     includeMergedPullRequests: include_merged_pull_requests,
     includeDiscussions: include_discussions,
     includeDiscussionsAnswers: include_discussions_answers,
+    excludeIssueRepos: issueRepos,
   });
 
   // Catch GraphQL errors.
@@ -294,6 +327,20 @@ const fetchStats = async (
   stats.totalReviews =
     user.contributionsCollection.totalPullRequestReviewContributions;
   stats.totalIssues = user.openIssues.totalCount + user.closedIssues.totalCount;
+  if (issueRepos.length > 0) {
+    const issueCount = res.data.data.filteredIssues?.issueCount;
+    if (
+      !Number.isInteger(issueCount) ||
+      issueCount < 0 ||
+      issueCount > stats.totalIssues
+    ) {
+      throw new CustomError(
+        "Could not fetch filtered issues.",
+        CustomError.GRAPHQL_ERROR,
+      );
+    }
+    stats.totalIssues = issueCount;
+  }
   if (include_discussions) {
     stats.totalDiscussionsStarted = user.repositoryDiscussions.totalCount;
   }

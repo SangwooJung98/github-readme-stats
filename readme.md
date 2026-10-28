@@ -375,6 +375,7 @@ If we don't support your language, please consider contributing! You can find mo
 | `rank_icon` | Shows alternative rank icon (i.e. `github`, `percentile` or `default`). | enum | `default` |
 | `show_icons` | Shows icons near all stats. | boolean | `false` |
 | `include_all_commits` | Count total commits instead of just the current year commits. | boolean | `false` |
+| `exclude_issue_repos` | Exclude issues authored in the specified `owner/repository` names. Other statistics keep their existing scope; rank uses the filtered issue count. | string (comma-separated values) | `null` |
 | `line_height` | Sets the line height between text. | integer | `25` |
 | `exclude_repo` | Excludes specified repositories. | string (comma-separated values) | `null` |
 | `custom_title` | Sets a custom title for the card. | string | `<username> GitHub Stats` |

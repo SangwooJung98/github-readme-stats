@@ -30,6 +30,7 @@ export default async (req, res) => {
     theme,
     cache_seconds,
     exclude_repo,
+    exclude_issue_repos,
     custom_title,
     locale,
     disable_animations,
@@ -75,6 +76,7 @@ export default async (req, res) => {
         showStats.includes("prs_merged_percentage"),
       showStats.includes("discussions_started"),
       showStats.includes("discussions_answered"),
+      parseArray(exclude_issue_repos),
     );
 
     let cacheSeconds = clampValue(

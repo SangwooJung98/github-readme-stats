@@ -106,6 +106,40 @@ describe("Test /api/", () => {
     expect(res.send).toBeCalledWith(renderStatsCard(stats, { ...req.query }));
   });
 
+  it("filters issues while preserving the requested card design", async () => {
+    const { req, res } = faker(
+      {
+        exclude_issue_repos: "org/menu-bot",
+        theme: "swift",
+        show_icons: "true",
+        hide_border: "true",
+      },
+      { data: { ...data_stats.data, filteredIssues: { issueCount: 3 } } },
+    );
+    await api(req, res);
+    const filteredStats = {
+      ...stats,
+      totalIssues: 3,
+      rank: calculateRank({
+        all_commits: false,
+        commits: stats.totalCommits,
+        prs: stats.totalPRs,
+        reviews: stats.totalReviews,
+        issues: 3,
+        repos: 1,
+        stars: stats.totalStars,
+        followers: 0,
+      }),
+    };
+    expect(res.send).toBeCalledWith(
+      renderStatsCard(filteredStats, {
+        theme: "swift",
+        show_icons: true,
+        hide_border: true,
+      }),
+    );
+  });
+
   it("should render error card on error", async () => {
     const { req, res } = faker({}, error);
 
